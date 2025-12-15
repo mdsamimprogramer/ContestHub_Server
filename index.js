@@ -55,6 +55,21 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const user = await userCollection.findOne({ email });
+
+      // optionally, count participated / won contests
+      const participatedContests = await paymentCollection.countDocuments({
+        userEmail: email,
+      });
+      const winningContests = await contestCollection.countDocuments({
+        winnerEmail: email,
+      });
+
+      res.send({ ...user, participatedContests, winningContests });
+    });
+
     /** CONTESTS **/
     app.post("/contests", async (req, res) => {
       const contest = req.body;
@@ -228,10 +243,10 @@ async function run() {
     });
 
     app.post("/submissions/:contestId", async (req, res) => {
-      const contestId = req.params.contestId; // <--- এটি দরকার
+      const contestId = req.params.contestId;
       const submission = {
         ...req.body,
-        contestId: new ObjectId(contestId), // MongoDB ObjectId হিসেবে store হবে
+        contestId: new ObjectId(contestId),
         isWinner: false,
         createdAt: new Date(),
       };
@@ -249,31 +264,48 @@ async function run() {
 
     // Get all submissions of a contest
     app.get("/submissions/contest/:contestId", async (req, res) => {
-      const contestId = req.params.contestId;
-      const subs = await submissionCollection
-        .find({ contestId: new ObjectId(contestId) })
+      const submissions = await submissionCollection
+        .find({ contestId: new ObjectId(req.params.contestId) })
         .toArray();
-      res.send(subs);
+      res.send(submissions);
     });
 
-    // Declare winner
+    // Declare winner (only by contest creator or admin)
     app.post("/contests/:contestId/declare-winner", async (req, res) => {
       const { submissionId } = req.body;
       const contestId = req.params.contestId;
 
-      // mark submission as winner
+      const submission = await submissionCollection.findOne({
+        _id: new ObjectId(submissionId),
+      });
+      if (!submission)
+        return res.status(404).send({ message: "Submission not found" });
+
       await submissionCollection.updateOne(
         { _id: new ObjectId(submissionId) },
         { $set: { isWinner: true } }
       );
 
-      // mark contest winnerSubmissionId
       await contestCollection.updateOne(
         { _id: new ObjectId(contestId) },
-        { $set: { winnerSubmissionId: submissionId } }
+        {
+          $set: {
+            winnerSubmissionId: submissionId,
+            winnerEmail: submission.userEmail,
+            status: "ended",
+          },
+        }
       );
 
-      res.send({ ok: true });
+      res.send({ success: true, message: "Winner declared successfully!" });
+    });
+
+    // Get winning contests for a user
+    app.get("/wins/:email", async (req, res) => {
+      const result = await contestCollection
+        .find({ winnerEmail: req.params.email })
+        .toArray();
+      res.send(result);
     });
 
     // users apis start
@@ -283,16 +315,6 @@ async function run() {
         .find({ email: req.params.email })
         .sort({ deadline: 1 })
         .toArray();
-      res.send(result);
-    });
-
-    app.get("/wins/:email", async (req, res) => {
-      const result = await contestCollection
-        .find({
-          winnerEmail: req.params.email,
-        })
-        .toArray();
-
       res.send(result);
     });
 
