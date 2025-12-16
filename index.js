@@ -7,10 +7,39 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
+const admin = require("firebase-admin");
 
 // middleware
 app.use(express.json());
 app.use(cors());
+
+const verifyToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  // token missing
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  try {
+    const decodedUser = await admin.auth().verifyIdToken(token);
+    req.decoded = decodedUser; // email, uid available
+    next();
+  } catch (error) {
+    return res.status(401).send({ message: "Invalid token" });
+  }
+};
+
+module.exports = verifyToken;
+
+// Firebase initialize
+const serviceAccount = require("./firebase-service-acount.json");
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.qzimykk.mongodb.net/?appName=Cluster0`;
 
@@ -34,13 +63,101 @@ async function run() {
     const submissionCollection = db.collection("submissions");
     const paymentCollection = db.collection("payments");
     // const contestCollection = db.collection("contests");
+    // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
-    // users apis
+   const verifyAdmin = async (req, res, next) => {
+     const email = req.decoded.email;
+     const user = await userCollection.findOne({ email });
 
-    app.get("/users", async (req, res) => {
+     if (!user || user.role !== "admin") {
+       return res.status(403).send({ message: "Forbidden access" });
+     }
+     next();
+   };
+
+
+    app.get("/users", verifyToken, verifyAdmin, async (req, res) => {
       const users = await userCollection.find().toArray();
       res.send(users);
     });
+
+    app.patch("/users/role/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const { role } = req.body;
+      const result = await userCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: { role } }
+      );
+      res.send(result);
+    });
+
+    app.get("/contests/admin", verifyToken, verifyAdmin, async (req, res) => {
+      const contests = await contestCollection.find().toArray();
+      res.send(contests);
+    });
+
+    app.patch(
+      "/contests/confirm/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const result = await contestCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { status: "confirmed" } }
+        );
+        res.send(result);
+      }
+    );
+
+    app.patch(
+      "/contests/reject/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const result = await contestCollection.updateOne(
+          { _id: new ObjectId(req.params.id) },
+          { $set: { status: "rejected" } }
+        );
+        res.send(result);
+      }
+    );
+
+    // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+    // ✅ Get user role by email
+    app.get("/users/role/:email", async (req, res) => {
+      const email = req.params.email;
+
+      const user = await userCollection.findOne({ email });
+
+      if (!user) {
+        return res.status(404).send({ message: "User not found" });
+      }
+
+      res.send({ role: user.role || "user" });
+    });
+    app.patch("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const { role } = req.body; // expected: "user", "creator", "admin"
+
+      if (!role) return res.status(400).send({ message: "Role is required" });
+
+      try {
+        const result = await userCollection.updateOne(
+          { email },
+          { $set: { role } }
+        );
+
+        if (result.matchedCount === 0)
+          return res.status(404).send({ message: "User not found" });
+
+        res.send({ success: true, message: `Role updated to ${role}` });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ error: "Failed to update role" });
+      }
+    });
+
+    // users apis
 
     // Add new user
     app.post("/users", async (req, res) => {
@@ -73,8 +190,11 @@ async function run() {
     /** CONTESTS **/
     app.post("/contests", async (req, res) => {
       const contest = req.body;
+
       contest.status = "pending";
+      contest.participants = 0; // ✅ MUST
       contest.createdAt = new Date();
+
       const result = await contestCollection.insertOne(contest);
       res.send(result);
     });
@@ -100,22 +220,46 @@ async function run() {
     // Update contest (only pending allowed)
     app.patch("/contests/:id", async (req, res) => {
       const id = req.params.id;
-      const update = { $set: req.body };
-      const result = await contestCollection.updateOne(
-        { _id: new ObjectId(id), status: "pending" },
-        update
-      );
-      res.send(result);
+      const { status } = req.body; // expected: "confirmed" or "rejected"
+
+      if (!status)
+        return res.status(400).send({ message: "Status is required" });
+
+      try {
+        const result = await contestCollection.updateOne(
+          { _id: new ObjectId(id), status: "pending" },
+          { $set: { status } }
+        );
+
+        if (result.matchedCount === 0)
+          return res
+            .status(404)
+            .send({ message: "Contest not found or already updated" });
+
+        res.send({ success: true, message: `Contest ${status}` });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ error: "Failed to update contest status" });
+      }
     });
 
     // Delete contest (only pending)
     app.delete("/contests/:id", async (req, res) => {
       const id = req.params.id;
-      const result = await contestCollection.deleteOne({
-        _id: new ObjectId(id),
-        status: "pending",
-      });
-      res.send(result);
+
+      try {
+        const result = await contestCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        if (result.deletedCount === 0)
+          return res.status(404).send({ message: "Contest not found" });
+
+        res.send({ success: true, message: "Contest deleted successfully" });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ error: "Failed to delete contest" });
+      }
     });
 
     app.get("/contests", async (req, res) => {
@@ -125,14 +269,45 @@ async function run() {
       res.send(contests);
     });
 
-    app.get("/contests/popular", async (req, res) => {
-      const contests = await contestCollection
-        .find({ status: "confirmed" })
-        .sort({ participants: -1 })
-        .limit(5)
-        .toArray();
-      res.send(contests);
-    });
+app.get("/contests/popular", async (req, res) => {
+  try {
+    if (!contestCollection) {
+      console.error("Contest collection is not initialized!");
+      return res.status(500).send({ error: "Database not connected" });
+    }
+
+    // Fetch all confirmed contests
+    const contests = await contestCollection
+      .find({ status: "confirmed" })
+      .toArray();
+
+    if (!contests || contests.length === 0) {
+      return res.send([]); // No contests found
+    }
+
+    // Safely map contests
+    const safeContests = contests.map((contest) => ({
+      _id: contest._id,
+      name: contest.name ?? "Untitled Contest",
+      description: contest.description ?? "",
+      image: contest.image ?? "/default-contest.png",
+      participants: contest.participants ?? 0,
+      prizeMoney: contest.prizeMoney ?? 0,
+      deadline: contest.deadline ?? null,
+      type: contest.type ?? "general",
+    }));
+
+    // Sort by participants descending
+    safeContests.sort((a, b) => b.participants - a.participants);
+
+    // Return top 5 popular contests
+    res.send(safeContests.slice(0, 5));
+  } catch (err) {
+    console.error("Popular contests fetch error:", err);
+    res.status(500).send({ error: "Failed to fetch popular contests" });
+  }
+});
+
 
     app.get("/contests/search", async (req, res) => {
       const type = req.query.type;
