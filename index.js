@@ -63,7 +63,7 @@ async function run() {
     const submissionCollection = db.collection("submissions");
     const paymentCollection = db.collection("payments");
     // const contestCollection = db.collection("contests");
-    // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
    const verifyAdmin = async (req, res, next) => {
      const email = req.decoded.email;
