@@ -366,6 +366,20 @@ async function run() {
       res.send(contests);
     });
 
+    app.get("/popular-contests", async (req, res) => {
+      try {
+        const contests = await contestCollection
+          .find({ status: "confirmed" })
+          .sort({ participantsCount: -1 })
+          .limit(5)
+          .toArray();
+
+        res.send(contests);
+      } catch (error) {
+        res.status(500).send({ error: "Failed to load popular contests" });
+      }
+    });
+
     app.get("/contests/popular", async (req, res) => {
       try {
         if (!contestCollection) {
@@ -406,13 +420,25 @@ async function run() {
     });
 
     app.get("/contests/search", async (req, res) => {
+      // ফ্রন্টএন্ড থেকে আসা lowercase type
       const type = req.query.type;
-      const contests = await contestCollection
-        .find({ status: "confirmed", type })
-        .toArray();
-      res.send(contests);
-    });
 
+      // query object তৈরি করা হলো
+      const query = { status: "confirmed" };
+
+      if (type) {
+        // শুধুমাত্র type যোগ করা হলো যদি এটি query-তে থাকে
+        query.type = type;
+      }
+
+      try {
+        const contests = await contestCollection.find(query).toArray();
+        res.send(contests);
+      } catch (error) {
+        console.error("Contest search error:", error);
+        res.status(500).send({ message: "Failed to search contests" });
+      }
+    });
     // Example Stripe endpoint
     app.post("/create-checkout-session", async (req, res) => {
       const { contestName, price, contestId, userEmail } = req.body;
@@ -483,7 +509,6 @@ async function run() {
       }
     });
 
-
     app.get("/participated-contests/:email", async (req, res) => {
       const email = req.params.email;
 
@@ -498,9 +523,9 @@ async function run() {
         }
 
         // Step 2: Remove duplicate contestIds
-        const contestIds = [
-          ...new Set(payments.map((p) => p.contestId)),
-        ].map((id) => new ObjectId(id));
+        const contestIds = [...new Set(payments.map((p) => p.contestId))].map(
+          (id) => new ObjectId(id)
+        );
 
         // Step 3: Fetch contests from contestCollection
         const contests = await contestCollection
