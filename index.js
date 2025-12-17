@@ -291,6 +291,55 @@ async function run() {
       }
     });
 
+    app.patch("/contests/edit/:id", async (req, res) => {
+      const id = req.params.id;
+      const updateData = req.body;
+
+      delete updateData._id; // safety
+
+      try {
+        const result = await contestCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "Contest not found" });
+        }
+
+        res.send({ success: true, modifiedCount: result.modifiedCount });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ error: "Failed to update contest" });
+      }
+    });
+    app.delete(
+      "/contests/admin/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+
+        try {
+          const result = await contestCollection.deleteOne({
+            _id: new ObjectId(id),
+          });
+
+          if (result.deletedCount === 0) {
+            return res.status(404).send({ message: "Contest not found" });
+          }
+
+          res.send({
+            success: true,
+            message: "Contest deleted successfully by admin",
+          });
+        } catch (err) {
+          console.error("Admin delete error:", err);
+          res.status(500).send({ error: "Failed to delete contest" });
+        }
+      }
+    );
+
     // Delete contest (only pending)
     app.delete("/contests/:id", async (req, res) => {
       const id = req.params.id;
@@ -434,21 +483,37 @@ async function run() {
       }
     });
 
-    // Get participated contests for a user
+
     app.get("/participated-contests/:email", async (req, res) => {
       const email = req.params.email;
 
-      const payments = await paymentCollection
-        .find({ userEmail: email })
-        .toArray();
+      try {
+        // Step 1: Get all payments by this user
+        const payments = await paymentCollection
+          .find({ userEmail: email })
+          .toArray();
 
-      const contestIds = payments.map((p) => new ObjectId(p.contestId));
+        if (!payments || payments.length === 0) {
+          return res.send([]); // no participated contests
+        }
 
-      const contests = await contestCollection
-        .find({ _id: { $in: contestIds } })
-        .toArray();
+        // Step 2: Remove duplicate contestIds
+        const contestIds = [
+          ...new Set(payments.map((p) => p.contestId)),
+        ].map((id) => new ObjectId(id));
 
-      res.send(contests);
+        // Step 3: Fetch contests from contestCollection
+        const contests = await contestCollection
+          .find({ _id: { $in: contestIds } })
+          .toArray();
+
+        res.send(contests);
+      } catch (err) {
+        console.error("Error fetching participated contests:", err);
+        res
+          .status(500)
+          .send({ error: "Failed to fetch participated contests" });
+      }
     });
 
     // Add submission
@@ -535,11 +600,9 @@ async function run() {
     });
 
     // users apis start
-
     app.get("/payments/user/:email", async (req, res) => {
       const result = await paymentCollection
-        .find({ email: req.params.email })
-        .sort({ deadline: 1 })
+        .find({ userEmail: req.params.email }) // ✅ ঠিক
         .toArray();
       res.send(result);
     });
