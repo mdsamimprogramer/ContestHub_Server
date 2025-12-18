@@ -10,8 +10,11 @@ const port = process.env.PORT || 3000;
 const admin = require("firebase-admin");
 
 // const serviceAccount = require("./firebase-admin-key.json");
+console.log(process.env.FB_SERVICE_KEY);
 
-const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString("utf8");
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf8"
+);
 const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
@@ -19,8 +22,8 @@ admin.initializeApp({
 });
 
 // middleware
-app.use(express.json());
 app.use(cors());
+app.use(express.json());
 
 const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -34,14 +37,12 @@ const verifyToken = async (req, res, next) => {
 
   try {
     const decodedUser = await admin.auth().verifyIdToken(token);
-    req.decoded = decodedUser; // email, uid available
+    req.decoded = decodedUser;
     next();
   } catch (error) {
     return res.status(401).send({ message: "Invalid token" });
   }
 };
-
-module.exports = verifyToken;
 
 // Firebase initialize
 // const serviceAccount = require("./firebase-services-account.json");
@@ -63,7 +64,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const db = client.db("contest_hub");
     const userCollection = db.collection("users");
@@ -71,7 +72,7 @@ async function run() {
     const submissionCollection = db.collection("submissions");
     const paymentCollection = db.collection("payments");
 
-    // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded.email;
@@ -158,7 +159,7 @@ async function run() {
       }
     );
 
-    // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
     //  Get user role by email
     app.get("/users/role/:email", async (req, res) => {
@@ -441,11 +442,9 @@ async function run() {
 
       try {
         const session = await stripe.checkout.sessions.retrieve(sessionId);
-
         if (session.payment_status !== "paid") {
           return res.status(400).send({ message: "Payment not completed" });
         }
-
         const { contestId, userEmail } = session.metadata;
 
         // prevent duplicate
@@ -489,7 +488,6 @@ async function run() {
 
         const uniqueIds = [...new Set(payments.map((p) => p.contestId))];
         const contestIds = uniqueIds.map((id) => new ObjectId(id));
-
         const contests = await contestCollection
           .find({ _id: { $in: contestIds } })
           .toArray();
@@ -501,7 +499,7 @@ async function run() {
       }
     });
 
-    // Add submission...........................
+    // Add submission........................
 
     app.post("/submissions/:contestId", verifyToken, async (req, res) => {
       const { userEmail, submissionLink } = req.body;
@@ -652,9 +650,9 @@ async function run() {
     });
 
     // await client.db("admin").command({ ping: 1 });
-    // console.log(
-    //   "Pinged your deployment. You successfully connected to MongoDB!"
-    // );
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
   } finally {
     // await client.close();
   }
