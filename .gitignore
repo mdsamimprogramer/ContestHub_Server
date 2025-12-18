@@ -1,3 +1,4 @@
 node_modules
 .env
 firebase-services-account.json
+.vercel

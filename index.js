@@ -9,6 +9,15 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
 const admin = require("firebase-admin");
 
+// const serviceAccount = require("./firebase-admin-key.json");
+
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString("utf8");
+const serviceAccount = JSON.parse(decoded);
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 // middleware
 app.use(express.json());
 app.use(cors());
@@ -35,10 +44,10 @@ const verifyToken = async (req, res, next) => {
 module.exports = verifyToken;
 
 // Firebase initialize
-const serviceAccount = require("./firebase-services-account.json");
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+// const serviceAccount = require("./firebase-services-account.json");
+// admin.initializeApp({
+//  credential: admin.credential.cert(serviceAccount),
+// });
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.qzimykk.mongodb.net/?appName=Cluster0`;
 
@@ -493,18 +502,8 @@ async function run() {
     });
 
     // Add submission...........................
-    app.post("/submissions", verifyToken, async (req, res) => {
-      const { userEmail, contestId, submissionLink } = req.body;
-      await submissionCollection.insertOne({
-        userEmail,
-        contestId,
-        submissionLink,
-        createdAt: new Date(),
-      });
-      res.send({ message: "Task submitted" });
-    });
 
-    app.post("/submissions/:contestId", async (req, res) => {
+    app.post("/submissions/:contestId", verifyToken, async (req, res) => {
       const { userEmail, submissionLink } = req.body;
       const contestId = req.params.contestId;
 
@@ -652,10 +651,10 @@ async function run() {
       }
     });
 
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
     // await client.close();
   }
