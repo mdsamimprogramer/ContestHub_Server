@@ -468,37 +468,32 @@ async function run() {
 
     app.get("/participated-contests/:email", async (req, res) => {
       const email = req.params.email;
+      console.log("Fetching for email:", email);
 
       try {
-        // Get all payments by this user
         const payments = await paymentCollection
           .find({ userEmail: email })
           .toArray();
+        console.log("Payments found:", payments.length);
 
-        if (!payments || payments.length === 0) {
-          return res.send([]);
-        }
+        if (!payments.length) return res.send([]);
 
-        const contestIds = [...new Set(payments.map((p) => p.contestId))].map(
-          (id) => new ObjectId(id)
-        );
+        const uniqueIds = [...new Set(payments.map((p) => p.contestId))];
+        const contestIds = uniqueIds.map((id) => new ObjectId(id));
 
-        // Fetch contests from contestCollection
         const contests = await contestCollection
           .find({ _id: { $in: contestIds } })
           .toArray();
+        console.log("Contests found in DB:", contests.length);
 
         res.send(contests);
       } catch (err) {
-        console.error("Error fetching participated contests:", err);
-        res
-          .status(500)
-          .send({ error: "Failed to fetch participated contests" });
+        res.status(500).send(err);
       }
     });
 
     // Add submission...........................
-    app.post("/submissions", async (req, res) => {
+    app.post("/submissions", verifyToken, async (req, res) => {
       const { userEmail, contestId, submissionLink } = req.body;
       await submissionCollection.insertOne({
         userEmail,
@@ -605,11 +600,56 @@ async function run() {
     });
 
     // users apis start
-    app.get("/payments/user/:email", async (req, res) => {
+    app.get("/payments/user/:email", verifyToken, async (req, res) => {
       const result = await paymentCollection
         .find({ userEmail: req.params.email })
         .toArray();
       res.send(result);
+    });
+
+    // Leaderboard API
+    app.get("/leaderboard", async (req, res) => {
+      try {
+        const leaderboard = await contestCollection
+          .aggregate([
+            { $match: { winnerEmail: { $exists: true, $ne: null } } },
+
+            {
+              $group: {
+                _id: "$winnerEmail",
+                winCount: { $sum: 1 },
+              },
+            },
+
+            { $sort: { winCount: -1 } },
+
+            {
+              $lookup: {
+                from: "users",
+                localField: "_id",
+                foreignField: "email",
+                as: "userDetails",
+              },
+            },
+
+            { $unwind: "$userDetails" },
+
+            {
+              $project: {
+                _id: 0,
+                email: "$_id",
+                winCount: 1,
+                name: "$userDetails.name",
+                photo: "$userDetails.photoURL",
+              },
+            },
+          ])
+          .toArray();
+
+        res.send(leaderboard);
+      } catch (err) {
+        res.status(500).send({ error: "Failed to load leaderboard" });
+      }
     });
 
     await client.db("admin").command({ ping: 1 });
