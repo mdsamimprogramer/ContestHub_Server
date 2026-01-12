@@ -2,7 +2,6 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const app = express();
-
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -12,14 +11,10 @@ const admin = require("firebase-admin");
 // const serviceAccount = require("./firebase-admin-key.json");
 console.log(process.env.FB_SERVICE_KEY);
 
-const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
-  "utf8"
-);
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString("utf8");
 const serviceAccount = JSON.parse(decoded);
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 
 // middleware
 app.use(cors());
@@ -52,7 +47,7 @@ const verifyToken = async (req, res, next) => {
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.qzimykk.mongodb.net/?appName=Cluster0`;
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+// Create a MongoClient with a MongoClientOptions object API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -63,7 +58,6 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
     // await client.connect();
 
     const db = client.db("contest_hub");
@@ -88,15 +82,9 @@ async function run() {
     app.get("/admin/stats", verifyToken, verifyAdmin, async (req, res) => {
       try {
         const totalUsers = await userCollection.countDocuments();
-
-        const totalCreators = await userCollection.countDocuments({
-          role: "creator",
-        });
-
+        const totalCreators = await userCollection.countDocuments({ role: "creator" });
         const totalContests = await contestCollection.countDocuments();
-
         const payments = await paymentCollection.find().toArray();
-
         const totalEarnings = payments.reduce(
           (sum, payment) => sum + (payment.amount || 0),
           0
@@ -200,7 +188,7 @@ async function run() {
     // Add new user
     app.post("/users", async (req, res) => {
       const user = req.body;
-      user.role = "user"; // default
+      user.role = "user";
       user.createdAt = new Date();
 
       const exists = await userCollection.findOne({ email: user.email });
